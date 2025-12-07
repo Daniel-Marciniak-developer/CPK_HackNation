@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-CPK Point Cloud Classifier - GENIUS STREAMING
+CPK Point Cloud Classifier - GENIUS STREAMING V2
 GAME CHANGER: Grid-based streaming - szybki, skuteczny, oszczędny!
 
 Klasyfikuje KAŻDY punkt bez wczytywania całego pliku do pamięci.
+Eksportuje do PLY z kolorami dla każdej klasy!
 """
 
 import numpy as np
@@ -81,7 +82,7 @@ class GeniusStreamingClassifier:
     
     def _classify_points_vectorized(self, z, intensity, rgb, z_min, z_range):
         """
-        Wektoryzowana klasyfikacja - ULTRA FAST!
+        ULEPSZONA wektoryzowana klasyfikacja - dokładniejsza!
         Przetwarza cały chunk naraz (bez pętli!)
         """
         n = len(z)
@@ -94,59 +95,67 @@ class GeniusStreamingClassifier:
         g = rgb[:, 1].astype(np.float32) / 65535.0
         b = rgb[:, 2].astype(np.float32) / 65535.0
         
+        # Dodatkowe cechy
         greenness = g - (r + b) / 2.0
         brightness = (r + g + b) / 3.0
+        blueness = b - (r + g) / 2.0
+        redness = r - (g + b) / 2.0
         
         # Inicjalizuj wszystkie jako Unclassified
         labels = np.ones(n, dtype=np.uint8)
         
-        # === PRIORYTETOWA KLASYFIKACJA ===
-        # (od najbardziej pewnych do najmniej pewnych)
+        # === ULEPSZONA PRIORYTETOWA KLASYFIKACJA ===
         
-        # 1. GROUND - bardzo nisko, nie zielone
-        ground = (z_rel < 0.05) & (greenness < 0.10)
+        # 1. GROUND - bardzo nisko, brązowe/szare, nie zielone
+        ground = (z_rel < 0.03) & (greenness < 0.08) & (brightness > 0.15)
         labels[ground] = 2
         
-        # 2. WATER - bardzo nisko, bardzo ciemne
-        water = (z_rel < 0.03) & (brightness < 0.15) & (labels == 1)
+        # 2. WATER - bardzo nisko, bardzo ciemne, niebieskawe
+        water = (z_rel < 0.02) & (brightness < 0.12) & (labels == 1)
         labels[water] = 9
         
-        # 3. VEGETATION - zielone
-        vegetation = (greenness > 0.12) & (labels == 1)
-        veg_low = vegetation & (z_rel < 0.08)
-        veg_med = vegetation & (z_rel >= 0.08) & (z_rel < 0.20)
-        veg_high = vegetation & (z_rel >= 0.20)
+        # 3. VEGETATION - zielone (BARDZIEJ LIBERALNE PROGI!)
+        vegetation = (greenness > 0.08) & (labels == 1)
+        veg_low = vegetation & (z_rel < 0.15)
+        veg_med = vegetation & (z_rel >= 0.15) & (z_rel < 0.40)
+        veg_high = vegetation & (z_rel >= 0.40)
         labels[veg_low] = 3
         labels[veg_med] = 4
         labels[veg_high] = 5
         
-        # 4. ROAD - nisko, ciemne, wysoka intensywność
-        road = (z_rel < 0.04) & (brightness < 0.35) & (intensity_norm > 0.50) & (labels == 1)
+        # 4. ROAD - nisko, ciemne, wysokość pod mostem
+        road = (z_rel < 0.05) & (brightness < 0.35) & (intensity_norm > 0.45) & (labels == 1)
         labels[road] = 17
         
-        # 5. SIDEWALK - trochę wyżej niż road, średnia jasność
-        sidewalk = (z_rel < 0.06) & (z_rel >= 0.03) & (brightness > 0.30) & (brightness < 0.50) & (labels == 1)
-        labels[sidewalk] = 18
-        
-        # 6. BUILDING - wysokie, jasne, nie zielone
-        building = (z_rel > 0.15) & (brightness > 0.35) & (greenness < 0.10) & (labels == 1)
-        labels[building] = 6
-        
-        # 7. BRIDGE - średnia wysokość, liniowe struktury
-        bridge = (z_rel > 0.08) & (z_rel < 0.15) & (brightness > 0.30) & (intensity_norm > 0.45) & (labels == 1)
+        # 5. BRIDGE/MOST - średnia wysokość, jasne, struktury mostowe
+        # To jest główna powierzchnia mostu!
+        bridge = (z_rel > 0.10) & (z_rel < 0.35) & (brightness > 0.35) & (greenness < 0.05) & (labels == 1)
         labels[bridge] = 13
         
-        # 8. RAIL - nisko, metaliczne (wysoka intensywność, ciemne)
-        rail = (z_rel < 0.05) & (intensity_norm > 0.60) & (brightness < 0.30) & (labels == 1)
+        # 6. BUILDING - bardzo wysokie (wyżej niż most), jasne
+        building = (z_rel > 0.40) & (brightness > 0.30) & (greenness < 0.08) & (labels == 1)
+        labels[building] = 6
+        
+        # 7. SIDEWALK - nisko/średnio, jasne betonowe
+        sidewalk = (z_rel > 0.03) & (z_rel < 0.12) & (brightness > 0.35) & (brightness < 0.55) & (labels == 1)
+        labels[sidewalk] = 18
+        
+        # 8. RAIL - metaliczne szyny (wysoka intensywność)
+        rail = (z_rel < 0.08) & (intensity_norm > 0.65) & (brightness < 0.35) & (labels == 1)
         labels[rail] = 14
         
-        # 9. POLE - bardzo wysokie, wąskie (pojedyncze punkty wysokie)
-        pole = (z_rel > 0.30) & (labels == 1)
+        # 9. POLE/SŁUP - bardzo wysokie, wąskie (punkty nad mostem - słupy energetyczne)
+        # BARDZIEJ RESTRYKCYJNE PROGI!
+        pole = (z_rel > 0.70) & (labels == 1)
         labels[pole] = 15
         
-        # 10. FENCE - średnia wysokość, liniowe
-        fence = (z_rel > 0.05) & (z_rel < 0.10) & (intensity_norm > 0.40) & (labels == 1)
+        # 10. FENCE - balustrady mostu, średnia wysokość
+        fence = (z_rel > 0.15) & (z_rel < 0.30) & (intensity_norm > 0.40) & (greenness < 0.05) & (labels == 1)
         labels[fence] = 11
+        
+        # 11. SIGN - znaki drogowe (jasne, kolorowe, średnia wysokość)
+        sign = (z_rel > 0.10) & (z_rel < 0.25) & ((redness > 0.15) | (brightness > 0.60)) & (labels == 1)
+        labels[sign] = 16
         
         return labels
     
@@ -239,6 +248,10 @@ class GeniusStreamingClassifier:
         
         print(f"   ✓ Zapisano: {time.time() - t_save:.1f}s")
         
+        # === KROK 4: EKSPORT DO PLY ===
+        ply_path = output_path.parent / f"{output_path.stem}.ply"
+        self.export_to_ply(input_path, all_classifications, ply_path)
+        
         # === PODSUMOWANIE ===
         total_time = time.time() - t0
         
@@ -255,9 +268,90 @@ class GeniusStreamingClassifier:
             name = self.classes.get(class_id, {}).get('name', 'Unknown')
             print(f"   [{class_id:2d}] {name:20s}: {count:12,} ({pct:5.1f}%)")
         
-        print(f"\n✅ Plik zapisany: {output_path}")
+        print(f"\n✅ Pliki zapisane:")
+        print(f"   📄 LAS: {output_path}")
+        print(f"   🎨 PLY: {ply_path}")
         print(f"{'='*70}\n")
-
+    
+    def export_to_ply(self, input_las_path, classifications, output_ply_path):
+        """
+        ULTRA SZYBKI eksport do PLY z kolorami według klasyfikacji
+        Używa numpy i wektoryzacji - nie ma pętli!
+        """
+        print(f"\n🎨 Konwersja do PLY z kolorami...")
+        t0 = time.time()
+        
+        output_ply_path = Path(output_ply_path)
+        
+        # === PRZYGOTUJ LOOKUP TABLE DLA KOLORÓW (WAŻNE!) ===
+        # To przyspiesza konwersję z O(n*k) do O(n)
+        max_class_id = max(self.classes.keys())
+        color_lut = np.zeros((max_class_id + 1, 3), dtype=np.uint8)
+        for class_id, info in self.classes.items():
+            color_lut[class_id] = info['color']
+        
+        # Wczytaj punkty w chunkach
+        chunk_size = 10_000_000  # Większe chunki = szybciej
+        
+        with laspy.open(input_las_path) as f:
+            n_total = f.header.point_count
+            
+            with open(output_ply_path, 'wb') as ply_file:
+                # Zapisz header PLY
+                header = f"""ply
+format binary_little_endian 1.0
+comment GENIUS Classifier - Classified Point Cloud
+element vertex {n_total}
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+property uchar classification
+end_header
+"""
+                ply_file.write(header.encode('ascii'))
+                
+                # Zapisz punkty chunk po chunku - WEKTORYZOWANE!
+                offset = 0
+                for chunk in f.chunk_iterator(chunk_size):
+                    chunk_size_actual = len(chunk.x)
+                    
+                    # Pobierz klasyfikacje dla tego chunka
+                    chunk_classifications = classifications[offset:offset+chunk_size_actual]
+                    
+                    # ULTRA SZYBKIE mapowanie kolorów przez lookup table!
+                    # Zamiast pętli przez klasy, używamy fancy indexing
+                    colors = color_lut[chunk_classifications]
+                    
+                    # === ULTRA SZYBKIE ZAPISYWANIE - NUMPY STRUCTURED ARRAY! ===
+                    # Przygotuj strukturalną tablicę z wszystkimi danymi
+                    dt = np.dtype([
+                        ('x', '<f4'), ('y', '<f4'), ('z', '<f4'),  # xyz jako float32
+                        ('r', 'u1'), ('g', 'u1'), ('b', 'u1'),      # rgb jako uint8
+                        ('class', 'u1')                             # klasyfikacja jako uint8
+                    ])
+                    
+                    # Utwórz tablicę i wypełnij ją
+                    data = np.empty(chunk_size_actual, dtype=dt)
+                    data['x'] = np.array(chunk.x, dtype=np.float32)
+                    data['y'] = np.array(chunk.y, dtype=np.float32)
+                    data['z'] = np.array(chunk.z, dtype=np.float32)
+                    data['r'] = colors[:, 0]
+                    data['g'] = colors[:, 1]
+                    data['b'] = colors[:, 2]
+                    data['class'] = chunk_classifications
+                    
+                    # Zapisz cały chunk naraz (MEGA SZYBKIE!)
+                    ply_file.write(data.tobytes())
+                    
+                    offset += chunk_size_actual
+                    progress = offset / n_total * 100
+                    print(f"   Eksport PLY: {progress:.1f}%", end='\r')
+        
+        print(f"\n   ✓ PLY zapisany: {time.time() - t0:.1f}s")
+        print(f"   📁 Plik: {output_ply_path}")
 
 def main():
     if len(sys.argv) < 2:
@@ -274,6 +368,7 @@ def main():
     
     classifier = GeniusStreamingClassifier()
     classifier.process_file_streaming(input_file, output_file)
+    classifier.export_to_ply(input_file, output_file, "output.ply")
 
 
 if __name__ == "__main__":
