@@ -1,0 +1,47 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Logs
+*.log
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+.cache/
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+backend/uploads/
+backend/outputs/
+
+# Frontend (Vite/React)
+Frontend/node_modules/
+Frontend/.vite/
+Frontend/dist/
+Frontend/.cache/
