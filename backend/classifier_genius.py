@@ -7,10 +7,12 @@ Klasyfikuje KAŻDY punkt bez wczytywania całego pliku do pamięci.
 Eksportuje do PLY z kolorami dla każdej klasy!
 """
 
+import time
+import gc
 import numpy as np
 import laspy
 import time
-import sys
+
 from pathlib import Path
 from collections import defaultdict
 
@@ -167,17 +169,11 @@ class GeniusStreamingClassifier:
         input_path = Path(input_path)
         output_path = Path(output_path)
         
-        print(f"\n{'='*70}")
-        print(f"🧠 GENIUS STREAMING CLASSIFIER")
-        print(f"{'='*70}")
-        print(f"📂 Input:  {input_path}")
-        print(f"📂 Output: {output_path}")
-        
         # === KROK 1: GLOBALNE STATYSTYKI ===
         z_min, z_max, z_range, n_total = self._get_global_stats(input_path)
         
         # === KROK 2: STREAMING CLASSIFICATION ===
-        print(f"\n🔄 Streaming klasyfikacja {n_total:,} punktów...")
+        print(f"\nStreaming klasyfikacja {n_total:,} punktów...")
         t0 = time.time()
         
         chunk_size = 5_000_000  # 5M punktów na raz
@@ -216,7 +212,7 @@ class GeniusStreamingClassifier:
                       f"Speed: {speed/1e6:.1f}M pts/s | "
                       f"ETA: {eta:.0f}s", end='\r')
         
-        print(f"\n   ✓ Klasyfikacja: {time.time() - t0:.1f}s")
+        print(f"\n   Klasyfikacja: {time.time() - t0:.1f}s")
         
         # === KROK 3: ZAPISZ WYNIK (używając chunk_iterator do zapisu) ===
         print(f"\n💾 Zapisywanie wyniku (streaming)...")
@@ -256,11 +252,11 @@ class GeniusStreamingClassifier:
         total_time = time.time() - t0
         
         print(f"\n{'='*70}")
-        print(f"✅ GOTOWE!")
+        print(f"GOTOWE!")
         print(f"{'='*70}")
-        print(f"⏱️  Całkowity czas: {total_time:.1f}s")
-        print(f"🚀 Prędkość: {n_total/total_time/1e6:.2f}M punktów/s")
-        print(f"\n📈 Statystyki klasyfikacji:")
+        print(f"Całkowity czas: {total_time:.1f}s")
+        print(f"Prędkość: {n_total/total_time/1e6:.2f}M punktów/s")
+        print(f"\nStatystyki klasyfikacji:")
         
         for class_id in sorted(stats.keys()):
             count = stats[class_id]
@@ -268,17 +264,17 @@ class GeniusStreamingClassifier:
             name = self.classes.get(class_id, {}).get('name', 'Unknown')
             print(f"   [{class_id:2d}] {name:20s}: {count:12,} ({pct:5.1f}%)")
         
-        print(f"\n✅ Pliki zapisane:")
-        print(f"   📄 LAS: {output_path}")
-        print(f"   🎨 PLY: {ply_path}")
+        print(f"\nPliki zapisane:")
+        print(f"   LAS: {output_path}")
+        print(f"   PLY: {ply_path}")
         print(f"{'='*70}\n")
-    
+            
     def export_to_ply(self, input_las_path, classifications, output_ply_path):
         """
         ULTRA SZYBKI eksport do PLY z kolorami według klasyfikacji
         Używa numpy i wektoryzacji - nie ma pętli!
         """
-        print(f"\n🎨 Konwersja do PLY z kolorami...")
+        print(f"\nKonwersja do PLY z kolorami...")
         t0 = time.time()
         
         output_ply_path = Path(output_ply_path)
@@ -350,26 +346,5 @@ end_header
                     progress = offset / n_total * 100
                     print(f"   Eksport PLY: {progress:.1f}%", end='\r')
         
-        print(f"\n   ✓ PLY zapisany: {time.time() - t0:.1f}s")
-        print(f"   📁 Plik: {output_ply_path}")
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python classifier_genius.py <input.las> [output.las]")
-        print("Example: python classifier_genius.py 'Chmura zadanie.las' classified_genius.las")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else None
-    
-    if output_file is None:
-        input_path = Path(input_file)
-        output_file = str(input_path.parent / f"{input_path.stem}_GENIUS.las")
-    
-    classifier = GeniusStreamingClassifier()
-    classifier.process_file_streaming(input_file, output_file)
-    classifier.export_to_ply(input_file, output_file, "output.ply")
-
-
-if __name__ == "__main__":
-    main()
+        print(f"\n   PLY zapisany: {time.time() - t0:.1f}s")
+        print(f"   Plik: {output_ply_path}")
