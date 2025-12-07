@@ -1,85 +1,174 @@
-import { useState, useEffect } from 'react';
-import { Cloud, Sparkles } from 'lucide-react';
-import UploadZone from './components/UploadZone';
-import ProcessingPipeline, { defaultSteps } from './components/ProcessingPipeline';
-import Results from './components/Results';
-import DownloadSection from './components/DownloadSection';
+import { useState, useEffect } from "react";
+import { Cloud, Sparkles } from "lucide-react";
+import UploadZone from "./components/UploadZone";
+import ProcessingPipeline, {
+  defaultSteps,
+} from "./components/ProcessingPipeline";
+import DownloadSection from "./components/DownloadSection";
 
-type AppState = 'upload' | 'processing' | 'results';
+type AppState = "upload" | "processing" | "results";
+
+interface ClassificationStats {
+  file_id: string;
+  total_points: number;
+  input_file_size_mb: number;
+  output_file_size_mb: number;
+  classes: Array<{
+    id: number;
+    name: string;
+    points: number;
+    percentage: number;
+  }>;
+}
 
 function App() {
-  const [state, setState] = useState<AppState>('upload');
+  const [state, setState] = useState<AppState>("upload");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileId, setFileId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [steps, setSteps] = useState(defaultSteps);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<ClassificationStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
-  const mockClassificationData = {
-    totalPoints: 15847293,
-    classifiedPoints: 15847293,
-    unclassifiedPoints: 0,
-    processingTime: 187,
-    classes: [
-      { name: 'Ground', points: 5234567, percentage: 33.03, color: '#8B4513' },
-      { name: 'Vegetation', points: 4123890, percentage: 26.02, color: '#228B22' },
-      { name: 'Building', points: 3456721, percentage: 21.81, color: '#DC143C' },
-      { name: 'Water', points: 1234567, percentage: 7.79, color: '#1E90FF' },
-      { name: 'Road', points: 987654, percentage: 6.23, color: '#696969' },
-      { name: 'Bridge', points: 456789, percentage: 2.88, color: '#FF8C00' },
-      { name: 'Rail', points: 234567, percentage: 1.48, color: '#4B0082' },
-      { name: 'Noise', points: 118538, percentage: 0.75, color: '#FF1493' },
-    ]
-  };
-
+  // Poll for classification status ONLY
   useEffect(() => {
-    if (state === 'processing') {
+    if (state !== "processing" || !fileId) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/status/${fileId}`);
+        const data = await response.json();
+
+        if (data.status === "completed") {
+          setProgress(100);
+          clearInterval(pollInterval);
+          // Don't automatically transition - wait for user to click "View Results"
+        } else if (data.status === "error") {
+          setError(data.error || "Classification failed");
+          clearInterval(pollInterval);
+          setState("upload");
+        }
+      } catch (err) {
+        console.error("Status check failed:", err);
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [state, fileId]);
+
+  // Simulate progress while processing
+  useEffect(() => {
+    if (state === "processing") {
       const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setTimeout(() => setState('results'), 500);
-            return 100;
-          }
-          return prev + 2;
+        setProgress((prev) => {
+          if (prev >= 95) return prev;
+          return prev + Math.random() * 10;
         });
-      }, 100);
+      }, 1000);
 
       return () => clearInterval(interval);
     }
   }, [state]);
 
   useEffect(() => {
-    if (state === 'processing') {
+    if (state === "processing") {
       const stepDuration = 100 / steps.length;
       const currentStepIndex = Math.floor(progress / stepDuration);
 
-      setSteps(prev => prev.map((step, index) => ({
-        ...step,
-        status: index < currentStepIndex ? 'done' :
-                index === currentStepIndex ? 'processing' :
-                'waiting'
-      })));
+      setSteps((prev) =>
+        prev.map((step, index) => ({
+          ...step,
+          status:
+            index < currentStepIndex
+              ? "done"
+              : index === currentStepIndex
+              ? "processing"
+              : "waiting",
+        }))
+      );
     }
   }, [progress, state]);
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = (file: File, id: string) => {
     setSelectedFile(file);
-    setState('processing');
+    setFileId(id);
+    setState("processing");
     setProgress(0);
-    setSteps(defaultSteps.map(step => ({ ...step, status: 'waiting' as const })));
+    setError(null);
+    setStats(null);
+    setSteps(
+      defaultSteps.map((step) => ({ ...step, status: "waiting" as const }))
+    );
+  };
+
+  const handleUploadError = (error: string) => {
+    setError(error);
+    setState("upload");
   };
 
   const handleDownloadLAS = () => {
-    console.log('Downloading LAS file...');
+    if (!fileId) return;
+    window.location.href = `/api/download/${fileId}`;
   };
 
   const handleDownloadReport = () => {
-    console.log('Downloading report...');
+    if (!stats) return;
+
+    // Create CSV report
+    const csvContent = [
+      ["CPK Cloud Classifier - Classification Report"],
+      [""],
+      ["File ID", stats.file_id],
+      ["Total Points", stats.total_points],
+      ["Input File Size (MB)", stats.input_file_size_mb],
+      ["Output File Size (MB)", stats.output_file_size_mb],
+      [""],
+      ["Class", "Points", "Percentage"],
+      ...stats.classes.map((c) => [c.name, c.points, `${c.percentage}%`]),
+    ]
+      .map((row) => row.join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${stats.file_id}_report.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleFetchStats = async () => {
+    if (!fileId) return;
+    
+    setLoadingStats(true);
+    try {
+      const statsResponse = await fetch(`/api/stats/${fileId}`);
+      const statsData = await statsResponse.json();
+      
+      if (statsResponse.ok) {
+        setStats(statsData);
+        setState("results");
+      } else {
+        console.error("Failed to fetch stats:", statsData.error);
+        setError(statsData.error || "Failed to fetch statistics");
+      }
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+      setError("Error fetching classification statistics");
+    } finally {
+      setLoadingStats(false);
+    }
   };
 
   const handleReset = () => {
-    setState('upload');
+    setState("upload");
     setSelectedFile(null);
+    setFileId(null);
     setProgress(0);
+    setError(null);
+    setStats(null);
     setSteps(defaultSteps);
   };
 
@@ -106,12 +195,12 @@ function App() {
                   <Sparkles className="w-6 h-6 text-[#00C7E6] animate-pulse" />
                 </h1>
                 <p className="text-[#A9B1C7] mt-1">
-                  Automated LAS/LAZ Point Cloud Classification with RandLA-Net
+                  Automated LAS/LAZ Point Cloud Classification with GENIUS
                 </p>
               </div>
             </div>
 
-            {state !== 'upload' && (
+            {state !== "upload" && (
               <button
                 onClick={handleReset}
                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#2A3441] to-[#1A1F2E] border border-[#2A3441] hover:border-[#4C7DFF] text-[#E6E6E6] font-semibold transition-all duration-300 hover:scale-105"
@@ -125,31 +214,28 @@ function App() {
         </header>
 
         <main className="space-y-12">
-          {state === 'upload' && (
-            <div className="max-w-4xl mx-auto">
-              <UploadZone onFileSelect={handleFileSelect} />
-
-              <div className="mt-8 grid grid-cols-3 gap-4">
-                <FeatureCard
-                  title="Fast Processing"
-                  description="Optimized RandLA-Net inference with GPU acceleration"
-                  icon="⚡"
-                />
-                <FeatureCard
-                  title="High Accuracy"
-                  description="Industry-leading classification accuracy >95%"
-                  icon="🎯"
-                />
-                <FeatureCard
-                  title="8 Classes"
-                  description="Ground, Vegetation, Building, Water, Road, Bridge, Rail, Noise"
-                  icon="🏗️"
-                />
-              </div>
+          {error && (
+            <div className="max-w-4xl mx-auto p-4 rounded-xl bg-red-500/20 border border-red-500 text-red-200 flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-300 hover:text-red-100 transition-colors"
+              >
+                ✕
+              </button>
             </div>
           )}
 
-          {state === 'processing' && (
+          {state === "upload" && (
+            <div className="max-w-4xl mx-auto">
+              <UploadZone
+                onFileSelect={handleFileSelect}
+                onUploadError={handleUploadError}
+              />
+            </div>
+          )}
+
+          {state === "processing" && (
             <div className="max-w-6xl mx-auto">
               <div className="p-8 rounded-2xl bg-gradient-to-br from-[#0E111B] to-[#0B0F1A] border border-[#2A3441]">
                 {selectedFile && (
@@ -159,27 +245,100 @@ function App() {
                         <Cloud className="w-5 h-5 text-[#00C7E6]" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-[#E6E6E6]">{selectedFile.name}</p>
+                        <p className="text-sm font-semibold text-[#E6E6E6]">
+                          {selectedFile.name}
+                        </p>
                         <p className="text-xs text-[#6B7280]">
                           {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                         </p>
                       </div>
                       <div className="px-4 py-2 rounded-lg bg-[#4C7DFF]/20 border border-[#4C7DFF]">
-                        <span className="text-sm text-[#4C7DFF] font-semibold">Processing</span>
+                        <span className="text-sm text-[#4C7DFF] font-semibold">
+                          Processing
+                        </span>
                       </div>
                     </div>
                   </div>
                 )}
 
                 <ProcessingPipeline steps={steps} progress={progress} />
+
+                {progress >= 95 && (
+                  <div className="mt-8 flex justify-center">
+                    <button
+                      onClick={handleFetchStats}
+                      disabled={loadingStats}
+                      className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#4C7DFF] to-[#00C7E6] hover:from-[#5A8FFF] hover:to-[#00D7F6] text-white font-semibold transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loadingStats ? (
+                        <span className="flex items-center gap-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          Loading Results...
+                        </span>
+                      ) : (
+                        "View Results"
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {state === 'results' && (
+          {state === "results" && stats && (
             <div className="space-y-12">
               <div className="p-8 rounded-2xl bg-gradient-to-br from-[#0E111B] to-[#0B0F1A] border border-[#2A3441]">
-                <Results data={mockClassificationData} />
+                <h2 className="text-2xl font-bold text-[#E6E6E6] mb-6">
+                  Classification Results
+                </h2>
+
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  <StatCard
+                    label="Total Points"
+                    value={stats.total_points.toLocaleString()}
+                  />
+                  <StatCard
+                    label="Input File Size"
+                    value={`${stats.input_file_size_mb} MB`}
+                  />
+                  <StatCard
+                    label="Output File Size"
+                    value={`${stats.output_file_size_mb} MB`}
+                  />
+                  <StatCard
+                    label="Classes Detected"
+                    value={stats.classes.length}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-[#E6E6E6]">
+                    Classification Breakdown
+                  </h3>
+                  {stats.classes.map((cls) => (
+                    <div key={cls.id} className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex justify-between mb-2">
+                          <span className="text-sm font-medium text-[#E6E6E6]">
+                            {cls.name}
+                          </span>
+                          <span className="text-sm text-[#A9B1C7]">
+                            {cls.percentage}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-[#1A1F2E] overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#4C7DFF] to-[#00C7E6]"
+                            style={{ width: `${cls.percentage}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-[#6B7280] mt-1 block">
+                          {cls.points.toLocaleString()} points
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="p-8 rounded-2xl bg-gradient-to-br from-[#0E111B] to-[#0B0F1A] border border-[#2A3441]">
@@ -191,29 +350,34 @@ function App() {
             </div>
           )}
         </main>
-
-        <footer className="mt-16 pb-8">
-          <div className="h-px bg-gradient-to-r from-transparent via-[#2A3441] to-transparent mb-6" />
-          <div className="flex items-center justify-between text-sm text-[#6B7280]">
-            <p>© 2025 CPK Cloud Classifier. Advanced Point Cloud Processing.</p>
-            <div className="flex items-center gap-6">
-              <span>Powered by RandLA-Net</span>
-              <span>|</span>
-              <span>v2.1.0</span>
-            </div>
-          </div>
-        </footer>
       </div>
     </div>
   );
 }
 
-function FeatureCard({ title, description, icon }: { title: string; description: string; icon: string }) {
+function FeatureCard({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description: string;
+  icon: string;
+}) {
   return (
     <div className="p-6 rounded-xl bg-gradient-to-br from-[#1A1F2E] to-[#0E111B] border border-[#2A3441] hover:border-[#4C7DFF]/50 transition-all duration-300 hover:scale-105">
       <div className="text-3xl mb-3">{icon}</div>
       <h3 className="text-lg font-semibold text-[#E6E6E6] mb-2">{title}</h3>
       <p className="text-sm text-[#A9B1C7] leading-relaxed">{description}</p>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="p-4 rounded-xl bg-[#1A1F2E]/50 border border-[#2A3441]">
+      <p className="text-xs text-[#6B7280] mb-1">{label}</p>
+      <p className="text-2xl font-bold text-[#E6E6E6]">{value}</p>
     </div>
   );
 }

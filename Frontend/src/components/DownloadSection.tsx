@@ -1,4 +1,5 @@
 import { Download, FileText, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
 
 interface DownloadSectionProps {
   onDownloadLAS: () => void;
@@ -6,6 +7,10 @@ interface DownloadSectionProps {
 }
 
 export default function DownloadSection({ onDownloadLAS, onDownloadReport }: DownloadSectionProps) {
+  const [res, setRes] = useState<object>()
+
+  
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-8">
@@ -51,29 +56,6 @@ export default function DownloadSection({ onDownloadLAS, onDownloadReport }: Dow
           className="group relative overflow-hidden p-8 rounded-2xl bg-gradient-to-br from-[#1D9BEF]/20 to-[#4C7DFF]/20 border-2 border-[#2A3441] hover:border-[#1D9BEF] transition-all duration-300 hover:scale-[1.02]"
         >
           <div className="absolute inset-0 bg-gradient-to-br from-[#1D9BEF]/0 to-[#4C7DFF]/0 group-hover:from-[#1D9BEF]/20 group-hover:to-[#4C7DFF]/20 transition-all duration-300" />
-
-          <div className="relative flex flex-col items-center">
-            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-br from-[#1D9BEF]/30 to-[#4C7DFF]/30 group-hover:scale-110 transition-transform duration-300">
-              <FileText className="w-12 h-12 text-[#E6E6E6]" />
-            </div>
-
-            <h3 className="text-xl font-bold text-[#E6E6E6] mb-2">
-              Analytics Report
-            </h3>
-            <p className="text-sm text-[#A9B1C7] mb-4">
-              JSON/CSV with detailed statistics
-            </p>
-
-            <div className="flex gap-2">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0B0F1A]/50 border border-[#2A3441]">
-                <span className="text-xs text-[#A9B1C7] font-mono">report.json</span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0B0F1A]/50 border border-[#2A3441]">
-                <span className="text-xs text-[#A9B1C7] font-mono">report.csv</span>
-              </div>
-            </div>
-          </div>
-
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#1D9BEF] to-[#4C7DFF] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300" />
         </button>
       </div>
